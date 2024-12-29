@@ -136,8 +136,3 @@ def verify_signature():
     except Exception as e:
         logger.error(f"Error during signature verification: {e}")
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
-
-if __name__ == "__main__":
-    # Set the port for Flask (defaults to 10000 if not provided)
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=True)  # Set debug=True only for development
