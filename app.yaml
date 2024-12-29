@@ -1,0 +1,21 @@
+runtime: python39  # Specifies the runtime environment
+
+entrypoint: gunicorn -b :$PORT verify_signature:app  # Runs the Flask app with gunicorn
+
+env_variables:
+  MONGO_URI: "mongodb+srv://satvikvattipalli1311:8I4SOudfJO8n8fIp@signare.w1j4f.mongodb.net/?retryWrites=true&w=majority&appName=Signare"
+  BUCKET_NAME: "signature_verification_storage"  # Google Cloud Storage bucket
+
+instance_class: F2  # Instance class for medium load
+
+automatic_scaling:
+  target_cpu_utilization: 0.65
+  min_instances: 1
+  max_instances: 5
+
+handlers:
+  - url: /static
+    static_dir: static/  # If you have static files
+
+  - url: /api/.*
+    script: auto  # Automatically route to the Flask app
