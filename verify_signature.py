@@ -10,12 +10,6 @@ import os
 from pymongo import MongoClient
 import gcsfs
 import tempfile
-import tensorflow as tf
-
-# Limit TensorFlow memory usage
-physical_devices = tf.config.list_physical_devices('CPU')
-tf.config.set_virtual_device_configuration(physical_devices[0], 
-                                            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096)])  # Set memory limit (in MB)
 
 # MongoDB connection
 mongo_client = MongoClient("mongodb+srv://satvikvattipalli1311:8I4SOudfJO8n8fIp@signare.w1j4f.mongodb.net/?retryWrites=true&w=majority&appName=Signare")
@@ -30,9 +24,9 @@ model_file_name = "Signature_verification(DL model).h5"
 fs = gcsfs.GCSFileSystem()
 model_path = f"gs://{bucket_name}/{model_file_name}"
 
-# Try to load model from Google Cloud Storage with temporary file management
 try:
-    temp_dir = tempfile.gettempdir()  # Use system's temporary directory
+    # Use the system's temporary directory for storing the file
+    temp_dir = tempfile.gettempdir()
     with tempfile.NamedTemporaryFile(suffix=".h5", dir=temp_dir, delete=False) as temp_file:
         with fs.open(model_path, 'rb') as gcs_file:
             temp_file.write(gcs_file.read())
@@ -71,8 +65,8 @@ def retrieve_and_store_signature(account_number):
         stored_signature = cv2.imdecode(stored_signature, cv2.IMREAD_GRAYSCALE)
         stored_signature = cv2.resize(stored_signature, (256, 256))  # Resize for consistency
 
-        # Save the stored signature to a temporary file
-        stored_signature_path = tempfile.mktemp(suffix=".jpg")
+        # Save the stored signature to a file
+        stored_signature_path = "stored_signature.jpg"
         cv2.imwrite(stored_signature_path, stored_signature)
 
         return stored_signature_path
@@ -104,7 +98,7 @@ def verify_signature():
         stored_signature_path = retrieve_and_store_signature(account_number)
 
         # Save the verifying signature temporarily
-        verifying_signature_path = tempfile.mktemp(suffix=".jpg")
+        verifying_signature_path = "verifying_signature.jpg"
         verifying_signature_file.save(verifying_signature_path)
 
         # Preprocess images
