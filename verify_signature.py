@@ -25,17 +25,26 @@ fs = gcsfs.GCSFileSystem()
 model_path = f"gs://{bucket_name}/{model_file_name}"
 
 try:
-    # Use the system's temporary directory for storing the file
-    temp_dir = tempfile.gettempdir()
-    with tempfile.NamedTemporaryFile(suffix=".h5", dir=temp_dir, delete=False) as temp_file:
+    # Create a temporary file to store the model locally
+    with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as temp_file:
+        print("Downloading model from Google Cloud Storage...")
+        
+        # Download the model from GCS
         with fs.open(model_path, 'rb') as gcs_file:
             temp_file.write(gcs_file.read())
-        temp_file.close()  # Explicitly close the file to ensure it's flushed
-        trained_model = load_model(temp_file.name)
-        os.unlink(temp_file.name)  # Remove the temporary file after loading the model
-    print("Model loaded successfully from Google Cloud Storage.")
-except Exception as e:
-    raise Exception(f"Error loading the model from Google Cloud Storage: {e}")
+        temp_file_name = temp_file.name
+
+    print("Model downloaded successfully. Loading the model...")
+
+    # Load the model from the temporary file
+    trained_model = load_model(temp_file_name)
+    print("Model loaded successfully.")
+
+finally:
+    # Clean up the temporary file
+    if os.path.exists(temp_file_name):
+        os.remove(temp_file_name)
+        print("Temporary file deleted.")
 
 # Create Flask app
 app = Flask(__name__)
@@ -54,25 +63,6 @@ def health_check():
     except Exception as e:
         return jsonify({"error": f"Model check failed: {str(e)}"}), 500
 
-# Function to retrieve and store the signature in a file
-def retrieve_and_store_signature(account_number):
-    record = collection.find_one({"accountNumber": str(account_number)})
-    if record and "image" in record:
-        signature_data = record["image"]
-        if isinstance(signature_data, str):  # Decode base64 string
-            signature_data = base64.b64decode(signature_data)
-        stored_signature = np.frombuffer(signature_data, dtype=np.uint8)
-        stored_signature = cv2.imdecode(stored_signature, cv2.IMREAD_GRAYSCALE)
-        stored_signature = cv2.resize(stored_signature, (256, 256))  # Resize for consistency
-
-        # Save the stored signature to a file
-        stored_signature_path = "stored_signature.jpg"
-        cv2.imwrite(stored_signature_path, stored_signature)
-
-        return stored_signature_path
-    else:
-        raise ValueError("Signature not found in the database.")
-
 # Feature extraction model
 def create_advanced_embedding_model(trained_model):
     feature_extractor = Model(inputs=trained_model.inputs, outputs=trained_model.layers[-8].output)
@@ -81,9 +71,9 @@ def create_advanced_embedding_model(trained_model):
 feature_extractor = create_advanced_embedding_model(trained_model)
 
 # Image preprocessing function
-def preprocess_image(image_path):
-    img = image.load_img(image_path, target_size=(224, 224))
-    img_array = image.img_to_array(img)
+def preprocess_image(image_data):
+    img_array = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
+    img_array = cv2.resize(img_array, (224, 224))
     img_array = np.expand_dims(img_array, axis=0) / 255.0
     return img_array
 
@@ -94,16 +84,17 @@ def verify_signature():
         account_number = request.form['account_number']
         verifying_signature_file = request.files['verifying_signature']
 
-        # Retrieve and save the stored signature
-        stored_signature_path = retrieve_and_store_signature(account_number)
+        # Retrieve stored signature from MongoDB
+        record = collection.find_one({"accountNumber": str(account_number)})
+        if not record or "image" not in record:
+            raise ValueError("Signature not found in the database.")
 
-        # Save the verifying signature temporarily
-        verifying_signature_path = "verifying_signature.jpg"
-        verifying_signature_file.save(verifying_signature_path)
+        # Decode stored signature
+        stored_signature_data = base64.b64decode(record["image"])
 
         # Preprocess images
-        stored_image = preprocess_image(stored_signature_path)
-        verifying_image = preprocess_image(verifying_signature_path)
+        stored_image = preprocess_image(stored_signature_data)
+        verifying_image = preprocess_image(verifying_signature_file.read())
 
         # Extract embeddings
         stored_embedding = feature_extractor.predict(stored_image).flatten()
